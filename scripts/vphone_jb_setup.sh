@@ -10,6 +10,16 @@
 
 set -uo pipefail
 
+# ── Extra tweaks to install on first boot ────────────────────
+#
+# EXTRA_PACKAGES — apt package names from any configured repo (space-separated).
+#   Example: EXTRA_PACKAGES="com.somedev.tweak net.somedev.other"
+#
+# Local .deb files dropped into <vm_dir>/tweaks/ are staged to the device
+# during cfw_install_jb.sh (ramdisk phase) and installed automatically below.
+#
+EXTRA_PACKAGES=""
+
 LOG="/var/log/vphone_jb_setup.log"
 DONE_MARKER="/var/mobile/.vphone_jb_setup_done"
 
@@ -201,8 +211,41 @@ fi
 uicache -a 2>/dev/null || true
 log "  uicache refreshed"
 
-# ═══════════ 8/8 SHELL PROFILES FOR SSH ═══════════════════════
-log "[8/8] Setting up shell profiles for SSH..."
+# ═══════════ 8/8 INSTALL LOCAL DEBS ═════════════════════════
+log "[8/10] Installing local .deb files from preboot tweaks/..."
+TWEAKS_DIR="/private/preboot/$BOOT_HASH/tweaks"
+if [ -d "$TWEAKS_DIR" ]; then
+    deb_count=0
+    for deb in "$TWEAKS_DIR"/*.deb; do
+        [ -f "$deb" ] || continue
+        log "  Installing $(basename "$deb")..."
+        dpkg -i "$deb" || log "  WARNING: dpkg -i $(basename "$deb") exited with $?"
+        deb_count=$((deb_count + 1))
+    done
+    if [ "$deb_count" -eq 0 ]; then
+        log "  No .deb files found in tweaks/"
+    else
+        uicache -a 2>/dev/null || true
+        log "  uicache refreshed ($deb_count debs installed)"
+    fi
+else
+    log "  No tweaks/ directory found, skipping"
+fi
+
+# ═══════════ 9/10 INSTALL EXTRA APT PACKAGES ═════════════════
+log "[9/10] Installing extra apt packages..."
+if [ -n "${EXTRA_PACKAGES:-}" ]; then
+    # shellcheck disable=SC2086
+    apt-get -o APT::Get::AllowUnauthenticated=true \
+        install -y -qq $EXTRA_PACKAGES 2>&1 || log "  WARNING: apt install exited with $?"
+    uicache -a 2>/dev/null || true
+    log "  Extra packages installed: $EXTRA_PACKAGES"
+else
+    log "  EXTRA_PACKAGES is empty, skipping"
+fi
+
+# ═══════════ 10/10 SHELL PROFILES FOR SSH ═════════════════════
+log "[10/10] Setting up shell profiles for SSH..."
 # .bashrc  — non-login interactive shells (dropbear default)
 # .bash_profile — login shells (some SSH configurations)
 # Both source /var/jb/etc/profile to get the full JB PATH.

@@ -303,6 +303,25 @@ ssh_cmd "/bin/rm -rf /mnt5/$BOOT_HASH/$JB_DIR_NAME/procursus/jb"
 ssh_cmd "/bin/rm -f /mnt5/$BOOT_HASH/bootstrap-iphoneos-arm64.tar"
 rm -f "$BOOTSTRAP_TAR"
 
+# ── Stage local tweak debs to preboot partition ───────────────
+# Any .deb files in <vm_dir>/tweaks/ are copied to the device now (ramdisk phase)
+# and installed by vphone_jb_setup.sh on first normal boot via dpkg -i.
+TWEAKS_DIR="$VM_DIR/tweaks"
+if [[ -d "$TWEAKS_DIR" ]]; then
+    tweak_debs=("$TWEAKS_DIR"/*.deb(N))
+    if (( ${#tweak_debs[@]} > 0 )); then
+        echo "  Staging ${#tweak_debs[@]} local deb(s) to preboot tweaks/..."
+        ssh_cmd "/bin/mkdir -p /mnt5/$BOOT_HASH/tweaks"
+        for deb in "${tweak_debs[@]}"; do
+            echo "    $(basename "$deb")"
+            scp_to "$deb" "/mnt5/$BOOT_HASH/tweaks/$(basename "$deb")"
+        done
+        echo "  [+] Tweaks staged (will be installed on first boot)"
+    else
+        echo "  tweaks/ directory exists but contains no .deb files, skipping"
+    fi
+fi
+
 # NOTE: /var/jb symlink is created at runtime by launchdhook.dylib
 # (Data volume is encrypted and not mountable from ramdisk).
 
